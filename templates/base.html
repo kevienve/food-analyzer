@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}食品配料分析助手{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    {% if session.user_id %}
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <a href="/dashboard" class="nav-brand">
+                <span class="brand-icon">🔍</span>
+                <span class="brand-text">食安分析</span>
+            </a>
+            <div class="nav-links">
+                <a href="/dashboard" class="nav-link">分析配料</a>
+                <a href="/history" class="nav-link">历史记录</a>
+                <a href="/profile" class="nav-link">个人资料</a>
+                <a href="javascript:void(0)" class="nav-link nav-link-danger" onclick="logout()">退出登录</a>
+            </div>
+            <button class="nav-toggle" id="navToggle" aria-label="菜单">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+    </nav>
+    <div class="nav-mobile" id="navMobile">
+        <a href="/dashboard" class="nav-link">📋 分析配料</a>
+        <a href="/history" class="nav-link">📜 历史记录</a>
+        <a href="/profile" class="nav-link">👤 个人资料</a>
+        <a href="javascript:void(0)" class="nav-link" onclick="logout()">🚪 退出登录</a>
+    </div>
+    {% endif %}
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // ====== 全局工具函数 ======
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast toast-${type} toast-visible`;
+            clearTimeout(toast._timeout);
+            toast._timeout = setTimeout(() => {
+                toast.classList.remove('toast-visible');
+            }, 3000);
+        }
+
+        async function apiRequest(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    headers: { 'Content-Type': 'application/json', ...options.headers },
+                    ...options,
+                });
+                const data = await response.json();
+                if (response.status === 401 && data.error) {
+                    window.location.href = '/login';
+                    return null;
+                }
+                return { status: response.status, data };
+            } catch (err) {
+                showToast('网络错误，请检查连接', 'error');
+                return null;
+            }
+        }
+
+        async function logout() {
+            const result = await apiRequest('/api/logout', { method: 'POST' });
+            if (result && result.data.success) {
+                window.location.href = '/login';
+            }
+        }
+
+        // 移动端导航切换
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggle = document.getElementById('navToggle');
+            const mobile = document.getElementById('navMobile');
+            if (toggle && mobile) {
+                toggle.addEventListener('click', () => {
+                    toggle.classList.toggle('active');
+                    mobile.classList.toggle('active');
+                });
+            }
+        });
+    </script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

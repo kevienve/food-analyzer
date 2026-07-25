@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}分析配料 - 食品配料分析助手{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="container">
+        <!-- 页面头部 -->
+        <div class="page-header">
+            <h1>📋 食品配料分析</h1>
+            <p class="page-desc">上传或粘贴食品的配料表，系统将分析其中的有害添加剂与有益成分，并结合你的健康状况给出建议。</p>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- 左侧：输入区 -->
+            <div class="card card-input">
+                <div class="card-header">
+                    <h2>📝 输入配料表</h2>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="foodName">食品名称（可选）</label>
+                        <input type="text" id="foodName" placeholder="例如：XX牌牛奶巧克力"
+                               class="input-lg">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ingredients">
+                            配料表内容 <span class="required">*</span>
+                            <span class="label-tip">（复制配料表粘贴到此处）</span>
+                        </label>
+                        <textarea id="ingredients"
+                                  placeholder='例如：小麦粉、白砂糖、植物油、可可粉、全脂奶粉、食品添加剂（碳酸氢钠、磷脂、食用香精）...'
+                                  rows="10" class="textarea-lg"></textarea>
+                    </div>
+
+                    <div class="input-tips">
+                        <h4>💡 输入提示：</h4>
+                        <ul>
+                            <li>直接复制食品包装上的配料表粘贴即可</li>
+                            <li>配料之间用逗号、顿号或换行分隔均可识别</li>
+                            <li>也可以上传配料表图片（即将支持）</li>
+                        </ul>
+                    </div>
+
+                    <button class="btn btn-primary btn-block btn-lg" id="analyzeBtn" onclick="analyzeIngredients()">
+                        🔍 开始分析
+                    </button>
+
+                    <div class="quick-examples">
+                        <h4>📎 快速体验（点击填充示例）：</h4>
+                        <button class="btn btn-sm btn-outline example-btn" onclick="fillExample('instant_noodles')">
+                            🍜 方便面
+                        </button>
+                        <button class="btn btn-sm btn-outline example-btn" onclick="fillExample('chocolate')">
+                            🍫 巧克力
+                        </button>
+                        <button class="btn btn-sm btn-outline example-btn" onclick="fillExample('sausage')">
+                            🌭 火腿肠
+                        </button>
+                        <button class="btn btn-sm btn-outline example-btn" onclick="fillExample('healthy')">
+                            🥗 健康食品
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：分析结果 -->
+            <div class="card card-result" id="resultCard">
+                <div class="card-header">
+                    <h2>📊 分析结果</h2>
+                </div>
+                <div class="card-body" id="resultBody">
+                    <div class="result-placeholder">
+                        <div class="placeholder-icon">🔬</div>
+                        <p>在左侧输入配料表，点击"开始分析"查看结果</p>
+                        <p class="placeholder-sub">系统会自动识别有害添加剂和有益成分</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分析加载动画 -->
+        <div class="analysis-overlay" id="analysisOverlay" style="display:none;">
+            <div class="analysis-modal">
+                <div class="analysis-spinner"></div>
+                <p class="analysis-text">正在分析配料表...</p>
+                <p class="analysis-sub">识别添加剂 | 匹配健康数据 | 生成个性化建议</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const examples = {
+    instant_noodles: {
+        name: 'XX牌红烧牛肉面',
+        ingredients: '小麦粉、精炼植物油、变性淀粉、食用盐、白砂糖、味精、鸡肉粉、牛肉粉、酱油粉、香辛料、食品添加剂（谷氨酸钠、5\'-呈味核苷酸二钠、碳酸钠、三聚磷酸钠、焦磷酸钠、磷酸二氢钠、山梨酸钾、柠檬黄、日落黄、BHA、BHT）、食用香精'
+    },
+    chocolate: {
+        name: 'XX牌牛奶巧克力',
+        ingredients: '白砂糖、可可脂、全脂奶粉、可可液块、乳清粉、大豆磷脂、聚甘油蓖麻醇酸酯（PGPR）、食用香精（香兰素）'
+    },
+    sausage: {
+        name: 'XX牌火腿肠',
+        ingredients: '鸡肉、猪肉、水、淀粉、食用盐、白砂糖、味精、香辛料、食品添加剂（亚硝酸钠、三聚磷酸钠、焦磷酸钠、山梨酸钾、D-异抗坏血酸钠、红曲红、诱惑红、卡拉胶、谷氨酸钠、5\'-呈味核苷酸二钠）、大豆蛋白、食用香精'
+    },
+    healthy: {
+        name: 'XX全麦坚果能量棒',
+        ingredients: '全麦燕麦片、杏仁、腰果、南瓜籽、葵花籽、蔓越莓干、蓝莓干、蜂蜜、椰子油、奇亚籽、亚麻籽、肉桂粉、海盐、维生素E（混合生育酚）'
+    }
+};
+
+function fillExample(key) {
+    const ex = examples[key];
+    if (ex) {
+        document.getElementById('foodName').value = ex.name;
+        document.getElementById('ingredients').value = ex.ingredients;
+        showToast('已填充示例：' + ex.name + '，点击"开始分析"查看结果', 'info');
+    }
+}
+
+async function analyzeIngredients() {
+    const ingredients = document.getElementById('ingredients').value.trim();
+    const foodName = document.getElementById('foodName').value.trim();
+
+    if (!ingredients) {
+        showToast('请输入配料表内容', 'error');
+        return;
+    }
+
+    if (ingredients.length < 3) {
+        showToast('配料表内容太短，请输入完整的配料表', 'error');
+        return;
+    }
+
+    // 显示加载动画
+    document.getElementById('analysisOverlay').style.display = 'flex';
+    document.getElementById('analyzeBtn').disabled = true;
+
+    const result = await apiRequest('/api/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ ingredients, food_name: foodName }),
+    });
+
+    // 隐藏加载动画
+    document.getElementById('analysisOverlay').style.display = 'none';
+    document.getElementById('analyzeBtn').disabled = false;
+
+    if (result && result.status === 200) {
+        renderResult(result.data);
+        // 滚动到结果区域
+        document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        showToast('分析完成！', 'success');
+    }
+}
+
+function renderResult(data) {
+    const body = document.getElementById('resultBody');
+    const suitability = data.suitability;
+
+    // 适合度颜色映射
+    const suitabilityColors = {
+        'safe': '#10b981',
+        'moderate': '#f59e0b',
+        'caution': '#f97316',
+        'not_recommended': '#ef4444',
+    };
+
+    let html = `
+        <!-- 适合度总览 -->
+        <div class="result-suitability" style="border-left-color: ${suitabilityColors[suitability.suitability] || '#6b7280'}">
+            <div class="suitability-badge" style="background: ${suitabilityColors[suitability.suitability] || '#6b7280'}">
+                ${suitability.suitability_text}
+            </div>
+            <p class="suitability-detail">${suitability.suitability_detail}</p>
+        </div>
+
+        <!-- 统计概览 -->
+        <div class="result-stats">
+            <div class="stat-item stat-harmful">
+                <span class="stat-num">${data.harmful_count}</span>
+                <span class="stat-label">有害添加剂</span>
+            </div>
+            <div class="stat-item stat-beneficial">
+                <span class="stat-num">${data.beneficial_count}</span>
+                <span class="stat-label">有益成分</span>
+            </div>
+            <div class="stat-item stat-total">
+                <span class="stat-num">${data.ingredients_count}</span>
+                <span class="stat-label">总配料数</span>
+            </div>
+        </div>
+
+        <!-- 食品基本信息 -->
+        <div class="result-meta">
+            <strong>🍽️ ${escapeHtml(data.food_name)}</strong>
+            <span class="result-time">分析时间：${data.analyzed_at}</span>
+            <a href="/result/${data.scan_id}" class="result-link">查看详情页 →</a>
+        </div>
+    `;
+
+    // 疾病警告
+    if (suitability.disease_warnings && suitability.disease_warnings.length > 0) {
+        html += `<div class="result-section result-section-warning">`;
+        html += `<h3>⚠️ 健康风险提示</h3>`;
+        suitability.disease_warnings.forEach(dw => {
+            html += `
+                <div class="warning-item">
+                    <div class="warning-header">
+                        <span class="warning-tag">${escapeHtml(dw.disease)}</span>
+                    </div>
+                    <p class="warning-text">${escapeHtml(dw.warning)}</p>
+                    <div class="warning-additives">
+                        <strong>冲突添加剂：</strong>
+                        ${dw.conflict_additives.map(a =>
+                            `<span class="tag tag-danger ${a.risk_level === 'high' ? 'tag-high-risk' : ''}">${escapeHtml(a.name)}</span>`
+                        ).join(' ')}
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    // 有害添加剂
+    if (data.harmful_additives.length > 0) {
+        html += `<div class="result-section result-section-harmful">`;
+        html += `<h3>🔴 检测到的有害添加剂 (${data.harmful_count})</h3>`;
+        data.harmful_additives.forEach(item => {
+            const riskBadge = item.risk_level === 'high' ? '🔴 高风险' :
+                              item.risk_level === 'medium' ? '🟡 中风险' : '🟢 低风险';
+            html += `
+                <div class="additive-card additive-harmful">
+                    <div class="additive-header">
+                        <span class="additive-name">${escapeHtml(item.name)}</span>
+                        <span class="additive-risk risk-${item.risk_level}">${riskBadge}</span>
+                    </div>
+                    <p class="additive-desc">${escapeHtml(item.description)}</p>
+                    <div class="additive-meta">
+                        <span class="meta-label">配料来源：</span>
+                        <code class="meta-value">${escapeHtml(item.matched_ingredient)}</code>
+                    </div>
+                    <div class="additive-meta">
+                        <span class="meta-label">常见于：</span>
+                        <span class="meta-value">${escapeHtml(item.common_in)}</span>
+                    </div>
+                    <div class="additive-advice">
+                        💡 ${escapeHtml(item.advice)}
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    // 有益成分
+    if (data.beneficial_ingredients.length > 0) {
+        html += `<div class="result-section result-section-beneficial">`;
+        html += `<h3>🟢 检测到的有益成分 (${data.beneficial_count})</h3>`;
+        data.beneficial_ingredients.forEach(item => {
+            html += `
+                <div class="additive-card additive-beneficial">
+                    <div class="additive-header">
+                        <span class="additive-name">${escapeHtml(item.name)}</span>
+                        <span class="additive-benefit-tag">✅ 有益</span>
+                    </div>
+                    <p class="additive-desc">${escapeHtml(item.description)}</p>
+                    ${item.benefits && item.benefits.length > 0 ? `
+                        <div class="benefit-tags">
+                            ${item.benefits.map(b => `<span class="tag tag-success">${escapeHtml(b)}</span>`).join(' ')}
+                        </div>
+                    ` : ''}
+                    <div class="additive-meta">
+                        <span class="meta-label">配料来源：</span>
+                        <code class="meta-value">${escapeHtml(item.matched_ingredient)}</code>
+                    </div>
+                    <div class="additive-meta">
+                        <span class="meta-label">常见于：</span>
+                        <span class="meta-value">${escapeHtml(item.common_in)}</span>
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    // 未检测到添加剂
+    if (data.harmful_count === 0 && data.beneficial_count === 0) {
+        html += `
+            <div class="result-section result-section-clean">
+                <h3>📋 分析说明</h3>
+                <p>在配料表中未匹配到已知的有害添加剂或特殊有益成分。</p>
+                <p>这可能是以下原因：</p>
+                <ul>
+                    <li>该食品主要由天然原料组成</li>
+                    <li>配料表中的成分不在当前数据库中</li>
+                    <li>配料表格式较特殊，建议调整后重试</li>
+                </ul>
+                <p class="result-note">注意：未检出≠绝对安全。建议关注配料表中的糖、盐、脂肪含量。</p>
+            </div>
+        `;
+    }
+
+    // 配料清单
+    if (data.ingredients_list && data.ingredients_list.length > 0) {
+        html += `
+            <div class="result-section">
+                <h3>📋 识别的配料清单 (${data.ingredients_list.length}项)</h3>
+                <div class="ingredient-tags">
+                    ${data.ingredients_list.map(i =>
+                        `<span class="ingredient-tag">${escapeHtml(i)}</span>`
+                    ).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    body.innerHTML = html;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 支持 Enter 键提交（Ctrl+Enter）
+document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'Enter') {
+        analyzeIngredients();
+    }
+});
+</script>
+{% endblock %}

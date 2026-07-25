@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.db
+.env
+/tmp/
+# 不相关的文件
+*.docx
+*.pptx
+*.pdf
+*.json
+nature-skills/
+.claude/
+WPI-TPs*.html
+ali_image_recognition.py
+create_ppt.py
+generate_ppt.py
+generate_ai_food_ppt.py
+generate_ai_food_jobs_doc.py
+30天*.docx
+AI+*.docx
+加热对*.docx
+水分*.docx
+食品中*.docx
+界面*.pptx
+文献*.pptx
+乳液*.pptx
+组会*.pptx

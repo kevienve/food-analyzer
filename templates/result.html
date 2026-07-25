@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}分析结果 - 食品配料分析助手{% endblock %}
+
+{% block content %}
+<div class="result-page">
+    <div class="container">
+        <div class="page-header">
+            <h1>📊 分析结果详情</h1>
+            <div class="page-actions">
+                <a href="/dashboard" class="btn btn-outline">← 返回分析</a>
+                <a href="/history" class="btn btn-outline">📜 历史记录</a>
+            </div>
+        </div>
+
+        <div class="card" id="resultDetail">
+            <div class="loading-placeholder" style="padding: 60px 0;">
+                <div class="spinner"></div>
+                <p>加载分析结果...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const scanId = window.location.pathname.split('/').pop();
+
+async function loadResult() {
+    const result = await apiRequest(`/api/scan/${scanId}`);
+    if (!result || result.status !== 200) {
+        document.getElementById('resultDetail').innerHTML = `
+            <div class="card-body">
+                <div class="empty-state">
+                    <div class="empty-icon">😕</div>
+                    <p>${result?.data?.error || '无法加载分析结果'}</p>
+                    <a href="/dashboard" class="btn btn-primary">去分析食品 →</a>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    renderDetailResult(result.data);
+}
+
+function renderDetailResult(data) {
+    const suitability = data.suitability;
+    const suitabilityColors = {
+        'safe': '#10b981',
+        'moderate': '#f59e0b',
+        'caution': '#f97316',
+        'not_recommended': '#ef4444',
+    };
+
+    let html = '<div class="card-body">';
+
+    // 顶部总览
+    html += `
+        <div class="result-hero" style="border-color: ${suitabilityColors[suitability.suitability] || '#6b7280'}">
+            <div class="hero-badge" style="background: ${suitabilityColors[suitability.suitability] || '#6b7280'}">
+                ${suitability.suitability_text}
+            </div>
+            <h2 class="hero-food-name">🍽️ ${escapeHtml(data.food_name)}</h2>
+            <p class="hero-detail">${suitability.suitability_detail}</p>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <span class="hero-stat-num">${data.ingredients_count}</span>
+                    <span class="hero-stat-label">总配料数</span>
+                </div>
+                <div class="hero-stat hero-stat-harmful">
+                    <span class="hero-stat-num">${data.harmful_count}</span>
+                    <span class="hero-stat-label">有害添加剂</span>
+                </div>
+                <div class="hero-stat hero-stat-beneficial">
+                    <span class="hero-stat-num">${data.beneficial_count}</span>
+                    <span class="hero-stat-label">有益成分</span>
+                </div>
+            </div>
+            <div class="hero-time">📅 分析时间：${data.analyzed_at || data.created_at || ''}</div>
+        </div>
+    `;
+
+    // 用户健康概览
+    if (data.user_diseases && data.user_diseases.length > 0) {
+        html += `
+            <div class="result-section result-section-user">
+                <h3>👤 你的健康档案</h3>
+                <div class="user-tags">
+                    <span class="user-tag-label">疾病：</span>
+                    ${data.user_diseases.map(d => `<span class="tag tag-warning">${escapeHtml(d)}</span>`).join(' ')}
+                    ${data.user_diseases.length === 0 ? '<span class="text-muted">未设置</span>' : ''}
+                </div>
+                ${data.user_allergies && data.user_allergies.length > 0 ? `
+                <div class="user-tags">
+                    <span class="user-tag-label">过敏原：</span>
+                    ${data.user_allergies.map(a => `<span class="tag tag-danger">${escapeHtml(a)}</span>`).join(' ')}
+                </div>` : ''}
+                ${data.user_restrictions && data.user_restrictions.length > 0 ? `
+                <div class="user-tags">
+                    <span class="user-tag-label">忌口：</span>
+                    ${data.user_restrictions.map(r => `<span class="tag tag-info">${escapeHtml(r)}</span>`).join(' ')}
+                </div>` : ''}
+            </div>
+        `;
+    }
+
+    // 健康风险提示
+    if (suitability.disease_warnings && suitability.disease_warnings.length > 0) {
+        html += `<div class="result-section result-section-warning">`;
+        html += `<h3>⚠️ 健康风险详情</h3>`;
+        suitability.disease_warnings.forEach(dw => {
+            html += `
+                <div class="warning-block">
+                    <div class="warning-header">
+                        <span class="warning-icon">⚠️</span>
+                        <span class="warning-disease">${escapeHtml(dw.disease)}</span>
+                    </div>
+                    <p class="warning-text">${escapeHtml(dw.warning)}</p>
+                    <div class="warning-additives-list">
+                        <strong>相关添加剂：</strong>
+                        ${dw.conflict_additives.map(a => `
+                            <div class="conflict-item">
+                                <span class="tag tag-danger ${a.risk_level === 'high' ? 'tag-high-risk' : ''}">${escapeHtml(a.name)}</span>
+                                <span class="risk-label">风险等级：${a.risk_level === 'high' ? '高' : a.risk_level === 'medium' ? '中' : '低'}</span>
+                                <span class="conflict-desc">${escapeHtml(a.description)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    // 饮食忌口提示
+    if (suitability.dietary_warnings && suitability.dietary_warnings.length > 0) {
+        html += `<div class="result-section result-section-dietary">`;
+        html += `<h3>🍽️ 饮食忌口提示</h3>`;
+        suitability.dietary_warnings.forEach(dw => {
+            html += `
+                <div class="dietary-item">
+                    <span class="dietary-tag">${escapeHtml(dw.restriction)}</span>
+                    <p>${escapeHtml(dw.message)}</p>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    // 有害添加剂详细列表
+    if (data.harmful_additives && data.harmful_additives.length > 0) {
+        html += `<div class="result-section result-section-harmful">`;
+        html += `<h3>🔴 有害添加剂详细列表</h3>`;
+        html += `<div class="additive-list">`;
+        data.harmful_additives.forEach(item => {
+            const riskLevel = item.risk_level === 'high' ? '高风险' :
+                             item.risk_level === 'medium' ? '中风险' : '低风险';
+            const riskEmoji = item.risk_level === 'high' ? '🔴' :
+                             item.risk_level === 'medium' ? '🟡' : '🟢';
+            html += `
+                <div class="additive-detail-card">
+                    <div class="adc-header">
+                        <h4>${escapeHtml(item.name)}</h4>
+                        <span class="risk-badge risk-${item.risk_level}">${riskEmoji} ${riskLevel}</span>
+                    </div>
+                    <p class="adc-desc">${escapeHtml(item.description)}</p>
+                    <div class="adc-meta">
+                        <div class="adc-meta-row">
+                            <span class="adc-label">📌 配料来源：</span>
+                            <code>${escapeHtml(item.matched_ingredient)}</code>
+                        </div>
+                        <div class="adc-meta-row">
+                            <span class="adc-label">📦 常见于：</span>
+                            <span>${escapeHtml(item.common_in)}</span>
+                        </div>
+                    </div>
+                    <div class="adc-advice">
+                        <strong>💡 建议：</strong>${escapeHtml(item.advice)}
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+    }
+
+    // 有益成分详细列表
+    if (data.beneficial_ingredients && data.beneficial_ingredients.length > 0) {
+        html += `<div class="result-section result-section-beneficial">`;
+        html += `<h3>🟢 有益成分详细列表</h3>`;
+        html += `<div class="additive-list">`;
+        data.beneficial_ingredients.forEach(item => {
+            html += `
+                <div class="additive-detail-card adc-beneficial">
+                    <div class="adc-header">
+                        <h4>${escapeHtml(item.name)}</h4>
+                        <span class="benefit-badge">✅ 有益成分</span>
+                    </div>
+                    <p class="adc-desc">${escapeHtml(item.description)}</p>
+                    ${item.benefits && item.benefits.length > 0 ? `
+                        <div class="adc-benefits">
+                            ${item.benefits.map(b => `<span class="tag tag-success">${escapeHtml(b)}</span>`).join(' ')}
+                        </div>
+                    ` : ''}
+                    <div class="adc-meta">
+                        <div class="adc-meta-row">
+                            <span class="adc-label">📌 配料来源：</span>
+                            <code>${escapeHtml(item.matched_ingredient)}</code>
+                        </div>
+                        <div class="adc-meta-row">
+                            <span class="adc-label">📦 常见于：</span>
+                            <span>${escapeHtml(item.common_in)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+    }
+
+    // 完整配料清单
+    if (data.ingredients_list && data.ingredients_list.length > 0) {
+        html += `
+            <div class="result-section">
+                <h3>📋 完整配料清单</h3>
+                <div class="full-ingredients">
+                    ${data.ingredients_list.map((ing, idx) =>
+                        `<span class="ingredient-item"><span class="ing-num">${idx + 1}.</span> ${escapeHtml(ing)}</span>`
+                    ).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    html += '</div>'; // card-body
+    document.getElementById('resultDetail').innerHTML = html;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+loadResult();
+</script>
+{% endblock %}

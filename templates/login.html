@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}登录 - 食品配料分析助手{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-container">
+        <div class="auth-header">
+            <div class="auth-icon">🔍</div>
+            <h1>食安分析</h1>
+            <p class="auth-subtitle">了解你的食物，守护你的健康</p>
+        </div>
+
+        <div class="auth-card">
+            <h2>用户登录</h2>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" id="username" name="username"
+                           placeholder="请输入用户名" required minlength="2" maxlength="20"
+                           autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">密码</label>
+                    <input type="password" id="password" name="password"
+                           placeholder="请输入密码" required minlength="6"
+                           autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+                    登 录
+                </button>
+            </form>
+            <div class="auth-footer">
+                还没有账号？<a href="/register">立即注册 →</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function handleLogin(e) {
+    e.preventDefault();
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    btn.textContent = '登录中...';
+
+    const result = await apiRequest('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+        }),
+    });
+
+    if (result) {
+        if (result.data.success) {
+            showToast('登录成功！', 'success');
+            setTimeout(() => { window.location.href = '/dashboard'; }, 500);
+        } else {
+            showToast(result.data.error || '登录失败', 'error');
+            btn.disabled = false;
+            btn.textContent = '登 录';
+        }
+    } else {
+        btn.disabled = false;
+        btn.textContent = '登 录';
+    }
+}
+</script>
+{% endblock %}

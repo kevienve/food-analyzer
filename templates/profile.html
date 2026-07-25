@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}个人资料 - 食品配料分析助手{% endblock %}
+
+{% block content %}
+<div class="profile-page">
+    <div class="container">
+        <div class="page-header">
+            <h1>👤 个人资料</h1>
+            <p class="page-desc">管理你的健康信息和饮食偏好，系统将据此为你提供个性化的食品分析。</p>
+        </div>
+
+        <div class="profile-card card">
+            <div class="card-body">
+                <form id="profileForm" onsubmit="handleUpdateProfile(event)">
+                    <!-- 基本信息 -->
+                    <fieldset class="form-fieldset">
+                        <legend>👤 基本信息</legend>
+                        <div class="form-row form-row-3">
+                            <div class="form-group">
+                                <label>用户名</label>
+                                <input type="text" id="displayUsername" disabled class="input-disabled">
+                            </div>
+                            <div class="form-group">
+                                <label for="age">年龄</label>
+                                <input type="number" id="age" name="age"
+                                       placeholder="请输入年龄" min="1" max="150">
+                            </div>
+                            <div class="form-group">
+                                <label for="gender">性别</label>
+                                <select id="gender" name="gender">
+                                    <option value="">请选择</option>
+                                    <option value="male">男</option>
+                                    <option value="female">女</option>
+                                    <option value="other">其他</option>
+                                </select>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- 健康状况 -->
+                    <fieldset class="form-fieldset">
+                        <legend>🏥 健康状况（可多选）</legend>
+                        <p class="fieldset-hint">更新你的疾病信息以获得更精准的分析结果</p>
+                        <div class="checkbox-grid" id="diseasesGrid"></div>
+                    </fieldset>
+
+                    <!-- 过敏原 -->
+                    <fieldset class="form-fieldset">
+                        <legend>⚠️ 过敏原（可多选）</legend>
+                        <div class="checkbox-grid" id="allergiesGrid"></div>
+                    </fieldset>
+
+                    <!-- 饮食偏好 -->
+                    <fieldset class="form-fieldset">
+                        <legend>🍽️ 饮食偏好/忌口（可多选）</legend>
+                        <div class="checkbox-grid" id="restrictionsGrid"></div>
+                    </fieldset>
+
+                    <!-- 补充说明 -->
+                    <div class="form-group">
+                        <label for="customNotes">补充说明</label>
+                        <textarea id="customNotes" name="customNotes"
+                                  placeholder="其他需要系统注意的健康状况..."
+                                  rows="3"></textarea>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary btn-lg" id="saveBtn">
+                            💾 保存修改
+                        </button>
+                        <span class="form-status" id="saveStatus"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let optionsData = null;
+
+async function loadProfile() {
+    // 加载选项
+    const optResult = await apiRequest('/api/options');
+    if (optResult && optResult.status === 200) {
+        optionsData = optResult.data;
+        renderCheckboxes('diseasesGrid', optionsData.diseases, 'diseases');
+        renderCheckboxes('allergiesGrid', optionsData.allergies, 'allergies');
+        renderCheckboxes('restrictionsGrid', optionsData.dietary_restrictions, 'restrictions');
+    }
+
+    // 加载用户资料
+    const profileResult = await apiRequest('/api/user/profile');
+    if (profileResult && profileResult.status === 200) {
+        const p = profileResult.data;
+        document.getElementById('displayUsername').value = p.username;
+        document.getElementById('age').value = p.age || '';
+        document.getElementById('gender').value = p.gender || '';
+        document.getElementById('customNotes').value = p.custom_notes || '';
+        checkValues('diseases', p.diseases || []);
+        checkValues('allergies', p.allergies || []);
+        checkValues('restrictions', p.dietary_restrictions || []);
+    }
+}
+
+function renderCheckboxes(gridId, items, name) {
+    const grid = document.getElementById(gridId);
+    grid.innerHTML = items.map(item => `
+        <label class="checkbox-item">
+            <input type="checkbox" name="${name}" value="${item.value}">
+            <span class="checkbox-label">${item.label}</span>
+        </label>
+    `).join('');
+}
+
+function checkValues(name, values) {
+    document.querySelectorAll(`input[name="${name}"]`).forEach(cb => {
+        cb.checked = values.includes(cb.value);
+    });
+}
+
+function getCheckedValues(name) {
+    return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`))
+        .map(cb => cb.value);
+}
+
+async function handleUpdateProfile(e) {
+    e.preventDefault();
+    const btn = document.getElementById('saveBtn');
+    const status = document.getElementById('saveStatus');
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+    status.textContent = '';
+
+    const result = await apiRequest('/api/user/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+            age: parseInt(document.getElementById('age').value) || null,
+            gender: document.getElementById('gender').value,
+            diseases: getCheckedValues('diseases'),
+            allergies: getCheckedValues('allergies'),
+            dietary_restrictions: getCheckedValues('restrictions'),
+            custom_notes: document.getElementById('customNotes').value,
+        }),
+    });
+
+    if (result && result.data.success) {
+        status.textContent = '✅ ' + result.data.message;
+        showToast('资料更新成功！', 'success');
+    } else {
+        status.textContent = '❌ 更新失败';
+        showToast(result?.data?.error || '更新失败', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = '💾 保存修改';
+    setTimeout(() => { status.textContent = ''; }, 3000);
+}
+
+loadProfile();
+</script>
+{% endblock %}

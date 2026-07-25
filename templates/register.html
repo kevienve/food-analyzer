@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}注册 - 食品配料分析助手{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-container auth-container-wide">
+        <div class="auth-header">
+            <div class="auth-icon">🍽️</div>
+            <h1>创建账号</h1>
+            <p class="auth-subtitle">填写你的健康信息，获得个性化食品分析</p>
+        </div>
+
+        <div class="auth-card auth-card-wide">
+            <form id="registerForm" onsubmit="handleRegister(event)">
+                <!-- 账号信息 -->
+                <fieldset class="form-fieldset">
+                    <legend>🔑 账号信息</legend>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="username">用户名 <span class="required">*</span></label>
+                            <input type="text" id="username" name="username"
+                                   placeholder="2-20个字符" required minlength="2" maxlength="20"
+                                   autocomplete="username">
+                        </div>
+                        <div class="form-group">
+                            <label for="password">密码 <span class="required">*</span></label>
+                            <input type="password" id="password" name="password"
+                                   placeholder="至少6个字符" required minlength="6"
+                                   autocomplete="new-password">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- 基本信息 -->
+                <fieldset class="form-fieldset">
+                    <legend>👤 基本信息</legend>
+                    <div class="form-row form-row-3">
+                        <div class="form-group">
+                            <label for="age">年龄</label>
+                            <input type="number" id="age" name="age"
+                                   placeholder="请输入年龄" min="1" max="150">
+                        </div>
+                        <div class="form-group">
+                            <label for="gender">性别</label>
+                            <select id="gender" name="gender">
+                                <option value="">请选择</option>
+                                <option value="male">男</option>
+                                <option value="female">女</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- 健康状况 -->
+                <fieldset class="form-fieldset">
+                    <legend>🏥 健康状况（可多选）</legend>
+                    <p class="fieldset-hint">选择你患有的疾病，系统会针对性地分析食品是否适合你</p>
+                    <div class="checkbox-grid" id="diseasesGrid">
+                        <!-- JS 动态生成 -->
+                    </div>
+                </fieldset>
+
+                <!-- 过敏信息 -->
+                <fieldset class="form-fieldset">
+                    <legend>⚠️ 过敏原（可多选）</legend>
+                    <p class="fieldset-hint">选择你对哪些食物/成分过敏</p>
+                    <div class="checkbox-grid" id="allergiesGrid">
+                        <!-- JS 动态生成 -->
+                    </div>
+                </fieldset>
+
+                <!-- 饮食偏好 -->
+                <fieldset class="form-fieldset">
+                    <legend>🍽️ 饮食偏好/忌口（可多选）</legend>
+                    <p class="fieldset-hint">选择你的饮食习惯和特殊需求</p>
+                    <div class="checkbox-grid" id="restrictionsGrid">
+                        <!-- JS 动态生成 -->
+                    </div>
+                </fieldset>
+
+                <!-- 补充说明 -->
+                <div class="form-group">
+                    <label for="customNotes">补充说明（可选）</label>
+                    <textarea id="customNotes" name="customNotes"
+                              placeholder="其他需要系统注意的健康状况、忌口或特殊需求..."
+                              rows="3"></textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block btn-lg" id="registerBtn">
+                    注册并开始使用
+                </button>
+            </form>
+            <div class="auth-footer">
+                已有账号？<a href="/login">立即登录 →</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let optionsData = null;
+
+async function loadOptions() {
+    const result = await apiRequest('/api/options');
+    if (result && result.status === 200) {
+        optionsData = result.data;
+        renderCheckboxes('diseasesGrid', optionsData.diseases, 'diseases');
+        renderCheckboxes('allergiesGrid', optionsData.allergies, 'allergies');
+        renderCheckboxes('restrictionsGrid', optionsData.dietary_restrictions, 'restrictions');
+    }
+}
+
+function renderCheckboxes(gridId, items, name) {
+    const grid = document.getElementById(gridId);
+    grid.innerHTML = items.map(item => `
+        <label class="checkbox-item">
+            <input type="checkbox" name="${name}" value="${item.value}">
+            <span class="checkbox-label">${item.label}</span>
+        </label>
+    `).join('');
+}
+
+function getCheckedValues(name) {
+    return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`))
+        .map(cb => cb.value);
+}
+
+async function handleRegister(e) {
+    e.preventDefault();
+    const btn = document.getElementById('registerBtn');
+    btn.disabled = true;
+    btn.textContent = '注册中...';
+
+    const result = await apiRequest('/api/register', {
+        method: 'POST',
+        body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+            age: parseInt(document.getElementById('age').value) || null,
+            gender: document.getElementById('gender').value,
+            diseases: getCheckedValues('diseases'),
+            allergies: getCheckedValues('allergies'),
+            dietary_restrictions: getCheckedValues('restrictions'),
+            custom_notes: document.getElementById('customNotes').value,
+        }),
+    });
+
+    if (result) {
+        if (result.data.success) {
+            showToast('注册成功！正在跳转...', 'success');
+            // 自动登录
+            await apiRequest('/api/login', {
+                method: 'POST',
+                body: JSON.stringify({
+                    username: document.getElementById('username').value,
+                    password: document.getElementById('password').value,
+                }),
+            });
+            setTimeout(() => { window.location.href = '/dashboard'; }, 800);
+        } else {
+            showToast(result.data.error || '注册失败', 'error');
+            btn.disabled = false;
+            btn.textContent = '注册并开始使用';
+        }
+    } else {
+        btn.disabled = false;
+        btn.textContent = '注册并开始使用';
+    }
+}
+
+loadOptions();
+</script>
+{% endblock %}
