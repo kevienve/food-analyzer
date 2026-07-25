@@ -20,7 +20,7 @@ UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'upload
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# 延迟加载 EasyOCR（首次使用才加载模型）
+# 延迟加载 PaddleOCR（国内最强中文OCR，首次使用才加载模型）
 ocr_reader = None
 
 DATABASE = 'food_analyzer.db'
@@ -629,12 +629,12 @@ def allowed_file(filename):
 
 
 def get_ocr_reader():
-    """延迟加载 EasyOCR，首次调用时加载模型"""
+    """延迟加载 PaddleOCR（百度出品，中文识别业界最强）"""
     global ocr_reader
     if ocr_reader is None:
-        import easyocr
-        # 只加载中文和英文识别器
-        ocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=False)
+        from paddleocr import PaddleOCR
+        # use_angle_cls=True 自动校正倾斜文字
+        ocr_reader = PaddleOCR(lang='ch', use_angle_cls=True, show_log=False)
     return ocr_reader
 
 
@@ -710,14 +710,22 @@ def api_ocr():
 
         reader = get_ocr_reader()
 
-        # 同时识别两个版本
-        results_mild = reader.readtext(mild, detail=0, paragraph=False)
-        results_orig = reader.readtext(original_gray, detail=0, paragraph=False)
+        # 双路识别：增强版 + 原始版
+        # PaddleOCR 返回格式：[[[box], ('text', confidence)], ...]
+        def ocr_text(img):
+            raw = reader.ocr(img, cls=True)
+            if not raw or not raw[0]:
+                return []
+            return [item[1][0] for item in raw[0] if item[1][1] > 0.5]  # 置信度>0.5
 
-        # 取结果更长的那个（通常意味着识别更准确）
-        text_mild = '，'.join(results_mild)
-        text_orig = '，'.join(results_orig)
-        results = results_mild if len(text_mild) >= len(text_orig) else results_orig
+        results_mild = ocr_text(mild)
+        results_orig = ocr_text(original_gray)
+
+        # 取结果更多的那个
+        if len(results_mild) >= len(results_orig):
+            results = results_mild
+        else:
+            results = results_orig
 
         if not results:
             return jsonify({
