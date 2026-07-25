@@ -688,30 +688,36 @@ def api_ocr():
         # 转为 numpy 数组
         img_array = np.array(image_data)
 
-        # === 图片预处理增强识别率 ===
-        # 1. 小图放大（小于 800px 宽的放大）
+        # === 智能预处理：原始+增强双路识别，取最佳 ===
         h, w = img_array.shape[:2]
-        if w < 800:
-            scale = 800 / w
+
+        # 小图放大
+        if w < 1000:
+            scale = 1000 / w
             img_array = cv2.resize(img_array, (int(w * scale), int(h * scale)),
                                    interpolation=cv2.INTER_CUBIC)
+            h, w = img_array.shape[:2]
 
-        # 2. 转灰度
         gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
 
-        # 3. 自适应直方图均衡化（增强对比度，让文字更清晰）
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
+        # 版本1：轻度增强（去噪+温和对比度）
+        denoised = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
+        clahe_mild = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+        mild = clahe_mild.apply(denoised)
 
-        # 4. 锐化（让文字边缘更清晰）
-        kernel = np.array([[-1, -1, -1],
-                           [-1,  9, -1],
-                           [-1, -1, -1]])
-        sharpened = cv2.filter2D(enhanced, -1, kernel)
+        # 版本2：原始灰度（不做增强，防止过度处理）
+        original_gray = gray.copy()
 
-        # 调用 EasyOCR（用增强后的图片）
         reader = get_ocr_reader()
-        results = reader.readtext(sharpened, detail=0)
+
+        # 同时识别两个版本
+        results_mild = reader.readtext(mild, detail=0, paragraph=False)
+        results_orig = reader.readtext(original_gray, detail=0, paragraph=False)
+
+        # 取结果更长的那个（通常意味着识别更准确）
+        text_mild = '，'.join(results_mild)
+        text_orig = '，'.join(results_orig)
+        results = results_mild if len(text_mild) >= len(text_orig) else results_orig
 
         if not results:
             return jsonify({
@@ -723,9 +729,20 @@ def api_ocr():
         # 拼接识别结果，保持可读性
         full_text = '，'.join(results)
 
+        # 质量检测：如果结果中异常字符太多，提示用户重新拍照
+        gibberish_ratio = sum(1 for c in full_text if ord(c) > 0x4e00 and ord(c) < 0x9fff) / max(len(full_text), 1)
+        # 真正的配料表应该有较多汉字，如果汉字比例太低或太高都可能是乱码
+        # 检查是否包含过多生僻字（正常配料表不会出现的）
+        import unicodedata
+        rare_chars = sum(1 for c in full_text if ord(c) > 0x20000 or unicodedata.category(c) == 'Co')
+        quality_warning = None
+        if len(full_text) > 10 and rare_chars > len(full_text) * 0.15:
+            quality_warning = "识别结果中异常字符较多，建议在光线充足的地方正对配料表重新拍摄。\n\n以下是当前识别结果，仅供参考："
+
         return jsonify({
             "success": True,
             "text": full_text,
+            "warning": quality_warning,
             "raw_results": results,
             "count": len(results)
         })
