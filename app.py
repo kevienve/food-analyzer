@@ -80,8 +80,35 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_scan_user ON scan_history(user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_scan_date ON scan_history(created_at)')
 
+    # 用户添加剂提交表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS additive_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            aliases TEXT DEFAULT '',
+            category TEXT NOT NULL DEFAULT 'harmful',
+            risk_level TEXT DEFAULT 'medium',
+            description TEXT DEFAULT '',
+            related_diseases TEXT DEFAULT '[]',
+            common_in TEXT DEFAULT '',
+            advice TEXT DEFAULT '',
+            benefits TEXT DEFAULT '[]',
+            status TEXT DEFAULT 'pending',
+            admin_note TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_status ON additive_submissions(status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_user ON additive_submissions(user_id)')
+
     db.commit()
     db.close()
+
+
+# 管理员密码（可修改）
+ADMIN_PASSWORD = 'kevienve2024'
 
 
 # ==================== 认证装饰器 ====================
@@ -651,20 +678,17 @@ def api_ocr():
         return jsonify({"error": "请上传图片文件或 base64 图片数据"}), 400
 
     try:
-        # 保存临时文件用于 OCR
-        temp_path = os.path.join(UPLOAD_FOLDER, 'temp_ocr_image.png')
         # 转 RGB 确保兼容性
         if image_data.mode in ('RGBA', 'P', 'LA'):
             image_data = image_data.convert('RGB')
-        image_data.save(temp_path)
+
+        # 转为 numpy 数组传给 EasyOCR（避免中文路径导致 OpenCV 无法读取）
+        import numpy as np
+        img_array = np.array(image_data)
 
         # 调用 EasyOCR
         reader = get_ocr_reader()
-        results = reader.readtext(temp_path, detail=0)
-
-        # 清理临时文件
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        results = reader.readtext(img_array, detail=0)
 
         if not results:
             return jsonify({
@@ -673,11 +697,8 @@ def api_ocr():
                 "warning": "未能从图片中识别到文字，请确保图片清晰且包含配料表文字。"
             })
 
-        # 拼接识别结果
-        full_text = ' '.join(results)
-
-        # 尝试整理格式：将空格替换为逗号
-        full_text = re.sub(r'\s+', '，', full_text)
+        # 拼接识别结果，保持可读性
+        full_text = '，'.join(results)
 
         return jsonify({
             "success": True,
@@ -688,6 +709,145 @@ def api_ocr():
 
     except Exception as e:
         return jsonify({"error": f"OCR识别失败: {str(e)}"}), 500
+
+
+# ==================== API - 用户提交添加剂 ====================
+
+@app.route('/api/submit-additive', methods=['POST'])
+@login_required
+def api_submit_additive():
+    """用户提交新的添加剂信息"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "无效的请求数据"}), 400
+
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({"error": "请输入添加剂名称"}), 400
+    if len(name) < 2:
+        return jsonify({"error": "名称太短，至少2个字符"}), 400
+
+    # 检查是否已存在于数据库中
+    for add in ADDITIVES:
+        if add['name'] == name or name in add.get('aliases', []):
+            return jsonify({"error": f"「{name}」已存在于数据库中，无需重复提交"}), 400
+
+    db = get_db()
+    db.execute('''
+        INSERT INTO additive_submissions
+        (user_id, name, aliases, category, risk_level, description,
+         related_diseases, common_in, advice, benefits)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        session['user_id'],
+        name,
+        data.get('aliases', ''),
+        data.get('category', 'harmful'),
+        data.get('risk_level', 'medium'),
+        data.get('description', ''),
+        json.dumps(data.get('related_diseases', []), ensure_ascii=False),
+        data.get('common_in', ''),
+        data.get('advice', ''),
+        json.dumps(data.get('benefits', []), ensure_ascii=False),
+    ))
+    db.commit()
+    return jsonify({"success": True, "message": "提交成功！管理员审核后将会添加到数据库中。"})
+
+
+@app.route('/api/submissions', methods=['GET'])
+@login_required
+def api_my_submissions():
+    """查看我的提交记录"""
+    db = get_db()
+    subs = db.execute('''
+        SELECT * FROM additive_submissions
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT 50
+    ''', (session['user_id'],)).fetchall()
+
+    return jsonify({
+        "submissions": [dict(row) for row in subs]
+    })
+
+
+# ==================== 管理员审核 ====================
+
+@app.route('/admin')
+def admin_page():
+    """管理员审核页面"""
+    return render_template('admin.html')
+
+
+@app.route('/api/admin/login', methods=['POST'])
+def api_admin_login():
+    """管理员登录"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "无效请求"}), 400
+
+    password = data.get('password', '')
+    if password == ADMIN_PASSWORD:
+        session['is_admin'] = True
+        return jsonify({"success": True})
+    return jsonify({"error": "密码错误"}), 401
+
+
+@app.route('/api/admin/submissions', methods=['GET'])
+def api_admin_submissions():
+    """获取所有待审核的提交"""
+    if not session.get('is_admin'):
+        return jsonify({"error": "需要管理员权限"}), 403
+
+    status_filter = request.args.get('status', 'pending')
+    db = get_db()
+    subs = db.execute('''
+        SELECT s.*, u.username
+        FROM additive_submissions s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.status = ?
+        ORDER BY s.created_at DESC
+    ''', (status_filter,)).fetchall()
+
+    return jsonify({
+        "submissions": [dict(row) for row in subs]
+    })
+
+
+@app.route('/api/admin/approve/<int:sub_id>', methods=['POST'])
+def api_admin_approve(sub_id):
+    """通过审核"""
+    if not session.get('is_admin'):
+        return jsonify({"error": "需要管理员权限"}), 403
+
+    data = request.get_json() or {}
+    db = get_db()
+    db.execute('''
+        UPDATE additive_submissions
+        SET status = 'approved', admin_note = ?
+        WHERE id = ?
+    ''', (data.get('note', '已通过'), sub_id))
+    db.commit()
+
+    return jsonify({"success": True, "message": "已通过审核"})
+
+
+@app.route('/api/admin/reject/<int:sub_id>', methods=['POST'])
+def api_admin_reject(sub_id):
+    """拒绝审核"""
+    if not session.get('is_admin'):
+        return jsonify({"error": "需要管理员权限"}), 403
+
+    data = request.get_json() or {}
+    db = get_db()
+    db.execute('''
+        UPDATE additive_submissions
+        SET status = 'rejected', admin_note = ?
+        WHERE id = ?
+    ''', (data.get('note', '已拒绝'), sub_id))
+    db.commit()
+
+    return jsonify({"success": True, "message": "已拒绝"})
 
 
 # ==================== API - 选项数据 ====================
@@ -757,6 +917,12 @@ if __name__ == '__main__':
     init_db()
     print("=" * 60)
     print("  食品配料分析网站已启动！")
+    print("  正在预加载OCR模型...")
+    try:
+        get_ocr_reader()
+        print("  OCR模型就绪！")
+    except Exception as e:
+        print(f"  警告：OCR模型加载失败 ({e})，拍照功能可能需要首次初始化")
     print("  请在浏览器访问: http://127.0.0.1:5000")
     print("=" * 60)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)

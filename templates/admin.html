@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}管理员审核 - 食品配料分析助手{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+    <div class="container">
+        <div class="page-header">
+            <h1>🛡️ 管理员审核</h1>
+            <p class="page-desc">审核用户提交的添加剂信息</p>
+        </div>
+
+        <!-- 登录界面 -->
+        <div class="card" id="adminLoginCard">
+            <div class="card-body" style="max-width:400px;margin:0 auto;text-align:center;">
+                <h3>请输入管理员密码</h3>
+                <div class="form-group">
+                    <input type="password" id="adminPassword" placeholder="管理员密码"
+                           class="input-lg" onkeydown="if(event.key==='Enter')adminLogin()">
+                </div>
+                <button class="btn btn-primary btn-block" onclick="adminLogin()">验证</button>
+                <p id="adminError" style="color:var(--color-danger);margin-top:12px;display:none;"></p>
+            </div>
+        </div>
+
+        <!-- 审核面板 -->
+        <div class="card" id="adminPanel" style="display:none;">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <h2>📋 提交列表</h2>
+                <div>
+                    <button class="btn btn-sm btn-outline" onclick="loadSubmissions('pending')">⏳ 待审核</button>
+                    <button class="btn btn-sm btn-outline" onclick="loadSubmissions('approved')">✅ 已通过</button>
+                    <button class="btn btn-sm btn-outline" onclick="loadSubmissions('rejected')">❌ 已拒绝</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="submissionList">
+                    <div class="loading-placeholder"><div class="spinner"></div><p>加载中...</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function adminLogin() {
+    const pwd = document.getElementById('adminPassword').value;
+    if (!pwd) return;
+
+    const result = await apiRequest('/api/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ password: pwd }),
+    });
+
+    if (result && result.data.success) {
+        document.getElementById('adminLoginCard').style.display = 'none';
+        document.getElementById('adminPanel').style.display = 'block';
+        loadSubmissions('pending');
+    } else {
+        document.getElementById('adminError').textContent = result?.data?.error || '密码错误';
+        document.getElementById('adminError').style.display = 'block';
+    }
+}
+
+async function loadSubmissions(status) {
+    const list = document.getElementById('submissionList');
+    list.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><p>加载中...</p></div>';
+
+    const result = await apiRequest(`/api/admin/submissions?status=${status}`);
+    if (!result || result.status !== 200) {
+        list.innerHTML = '<p class="empty-text">加载失败或无权限</p>';
+        return;
+    }
+
+    const subs = result.data.submissions;
+    if (subs.length === 0) {
+        list.innerHTML = `<p class="empty-text">暂无${status === 'pending' ? '待审核' : status === 'approved' ? '已通过' : '已拒绝'}的记录</p>`;
+        return;
+    }
+
+    list.innerHTML = subs.map(s => `
+        <div class="submission-item">
+            <div class="submission-header">
+                <span class="submission-name">${escapeHtml(s.name)}</span>
+                <span class="tag ${s.category === 'harmful' ? 'tag-danger' : 'tag-success'}">
+                    ${s.category === 'harmful' ? '有害' : '有益'}
+                </span>
+                ${s.risk_level ? `<span class="risk-badge risk-${s.risk_level}">风险：${s.risk_level === 'high' ? '高' : s.risk_level === 'medium' ? '中' : '低'}</span>` : ''}
+            </div>
+            ${s.description ? `<p class="submission-desc">${escapeHtml(s.description)}</p>` : ''}
+            <div class="submission-meta">
+                <span>别名：${escapeHtml(s.aliases || '无')}</span>
+                <span>常见于：${escapeHtml(s.common_in || '未填写')}</span>
+                <span>建议：${escapeHtml(s.advice || '未填写')}</span>
+                <span>提交者：${escapeHtml(s.username || '未知')}</span>
+                <span>时间：${s.created_at}</span>
+            </div>
+            ${s.status === 'pending' ? `
+                <div class="submission-actions">
+                    <input type="text" id="note_${s.id}" placeholder="审核备注（可选）" class="input-sm" style="flex:1;">
+                    <button class="btn btn-sm btn-primary" onclick="approve(${s.id})">✅ 通过</button>
+                    <button class="btn btn-sm btn-danger" onclick="reject(${s.id})">❌ 拒绝</button>
+                </div>
+            ` : `
+                <div class="submission-status">
+                    <span class="tag ${s.status === 'approved' ? 'tag-success' : 'tag-danger'}">
+                        ${s.status === 'approved' ? '✅ 已通过' : '❌ 已拒绝'}
+                    </span>
+                    ${s.admin_note ? `<span>备注：${escapeHtml(s.admin_note)}</span>` : ''}
+                </div>
+            `}
+        </div>
+    `).join('');
+}
+
+async function approve(id) {
+    const note = document.getElementById(`note_${id}`)?.value || '';
+    const result = await apiRequest(`/api/admin/approve/${id}`, {
+        method: 'POST',
+        body: JSON.stringify({ note }),
+    });
+    if (result && result.data.success) {
+        showToast('已通过审核', 'success');
+        loadSubmissions('pending');
+    }
+}
+
+async function reject(id) {
+    const note = document.getElementById(`note_${id}`)?.value || '';
+    const result = await apiRequest(`/api/admin/reject/${id}`, {
+        method: 'POST',
+        body: JSON.stringify({ note }),
+    });
+    if (result && result.data.success) {
+        showToast('已拒绝', 'success');
+        loadSubmissions('pending');
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
