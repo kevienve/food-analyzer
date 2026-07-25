@@ -5,14 +5,23 @@ import json
 import re
 import sqlite3
 import os
+import base64
 from datetime import datetime
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from additives_data import ADDITIVES, DISEASE_ADDITIVE_MAP, DIETARY_RESTRICTION_MAP
 
 app = Flask(__name__)
 app.secret_key = 'food-additive-analyzer-secret-key-2024'
+
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# 延迟加载 EasyOCR（首次使用才加载模型）
+ocr_reader = None
 
 DATABASE = 'food_analyzer.db'
 
@@ -584,6 +593,101 @@ def api_delete_scan(scan_id):
     db.execute('DELETE FROM scan_history WHERE id = ? AND user_id = ?', (scan_id, session['user_id']))
     db.commit()
     return jsonify({"success": True, "message": "记录已删除"})
+
+
+# ==================== API - 拍照识图 OCR ====================
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def get_ocr_reader():
+    """延迟加载 EasyOCR，首次调用时加载模型"""
+    global ocr_reader
+    if ocr_reader is None:
+        import easyocr
+        # 只加载中文和英文识别器
+        ocr_reader = easyocr.Reader(['ch_sim', 'en'], gpu=False, verbose=False)
+    return ocr_reader
+
+
+@app.route('/api/ocr', methods=['POST'])
+@login_required
+def api_ocr():
+    """拍照识图 - 从图片中提取配料表文字"""
+    # 支持两种上传方式：文件上传或 base64
+    image_data = None
+
+    if 'image' in request.files:
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({"error": "未选择图片"}), 400
+        if not allowed_file(file.filename):
+            return jsonify({"error": "不支持的图片格式，请使用 JPG/PNG/GIF/BMP/WEBP"}), 400
+
+        from PIL import Image
+        import io
+        image_data = Image.open(io.BytesIO(file.read()))
+
+    elif 'image_base64' in request.form or request.is_json:
+        data = request.get_json() if request.is_json else request.form
+        image_base64 = data.get('image_base64', '')
+
+        if not image_base64:
+            return jsonify({"error": "请上传图片或拍照"}), 400
+
+        # 去掉 data:image/xxx;base64, 前缀
+        if ',' in image_base64:
+            image_base64 = image_base64.split(',', 1)[1]
+
+        try:
+            from PIL import Image
+            import io
+            image_bytes = base64.b64decode(image_base64)
+            image_data = Image.open(io.BytesIO(image_bytes))
+        except Exception as e:
+            return jsonify({"error": f"图片解析失败: {str(e)}"}), 400
+    else:
+        return jsonify({"error": "请上传图片文件或 base64 图片数据"}), 400
+
+    try:
+        # 保存临时文件用于 OCR
+        temp_path = os.path.join(UPLOAD_FOLDER, 'temp_ocr_image.png')
+        # 转 RGB 确保兼容性
+        if image_data.mode in ('RGBA', 'P', 'LA'):
+            image_data = image_data.convert('RGB')
+        image_data.save(temp_path)
+
+        # 调用 EasyOCR
+        reader = get_ocr_reader()
+        results = reader.readtext(temp_path, detail=0)
+
+        # 清理临时文件
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        if not results:
+            return jsonify({
+                "success": True,
+                "text": "",
+                "warning": "未能从图片中识别到文字，请确保图片清晰且包含配料表文字。"
+            })
+
+        # 拼接识别结果
+        full_text = ' '.join(results)
+
+        # 尝试整理格式：将空格替换为逗号
+        full_text = re.sub(r'\s+', '，', full_text)
+
+        return jsonify({
+            "success": True,
+            "text": full_text,
+            "raw_results": results,
+            "count": len(results)
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"OCR识别失败: {str(e)}"}), 500
 
 
 # ==================== API - 选项数据 ====================
