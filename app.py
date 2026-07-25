@@ -678,17 +678,40 @@ def api_ocr():
         return jsonify({"error": "请上传图片文件或 base64 图片数据"}), 400
 
     try:
+        import numpy as np
+        import cv2
+
         # 转 RGB 确保兼容性
         if image_data.mode in ('RGBA', 'P', 'LA'):
             image_data = image_data.convert('RGB')
 
-        # 转为 numpy 数组传给 EasyOCR（避免中文路径导致 OpenCV 无法读取）
-        import numpy as np
+        # 转为 numpy 数组
         img_array = np.array(image_data)
 
-        # 调用 EasyOCR
+        # === 图片预处理增强识别率 ===
+        # 1. 小图放大（小于 800px 宽的放大）
+        h, w = img_array.shape[:2]
+        if w < 800:
+            scale = 800 / w
+            img_array = cv2.resize(img_array, (int(w * scale), int(h * scale)),
+                                   interpolation=cv2.INTER_CUBIC)
+
+        # 2. 转灰度
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+
+        # 3. 自适应直方图均衡化（增强对比度，让文字更清晰）
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+
+        # 4. 锐化（让文字边缘更清晰）
+        kernel = np.array([[-1, -1, -1],
+                           [-1,  9, -1],
+                           [-1, -1, -1]])
+        sharpened = cv2.filter2D(enhanced, -1, kernel)
+
+        # 调用 EasyOCR（用增强后的图片）
         reader = get_ocr_reader()
-        results = reader.readtext(img_array, detail=0)
+        results = reader.readtext(sharpened, detail=0)
 
         if not results:
             return jsonify({
