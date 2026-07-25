@@ -14,8 +14,9 @@
     <nav class="navbar" id="navbar">
         <div class="nav-container">
             <a href="/dashboard" class="nav-brand">
-                <span class="brand-icon">🔍</span>
+                <span class="brand-icon" id="brandIcon" title="食安分析">🛡️</span>
                 <span class="brand-text">食安分析</span>
+                <span class="brand-version">Pro</span>
             </a>
             <div class="nav-links">
                 <a href="/dashboard" class="nav-link">分析配料</a>
@@ -39,6 +40,26 @@
     <main class="main-content">
         {% block content %}{% endblock %}
     </main>
+
+    {% if session.user_id %}
+    <footer class="site-footer">
+        <div class="footer-container">
+            <div class="footer-brand">
+                <span class="footer-icon">🔬</span>
+                <span>食安分析 · FoodGuard</span>
+            </div>
+            <div class="footer-credit">
+                <span>Made with ❤️ by</span>
+                <a href="https://github.com/kevienve" target="_blank" class="footer-author">kevienve</a>
+                <span class="footer-divider">|</span>
+                <span class="footer-version">v2.0</span>
+            </div>
+            <div class="footer-tagline">
+                <span id="footerQuote">「民以食为天，食以安为先」</span>
+            </div>
+        </div>
+    </footer>
+    {% endif %}
 
     <div id="toast" class="toast"></div>
 
@@ -89,6 +110,49 @@
                     toggle.classList.toggle('active');
                     mobile.classList.toggle('active');
                 });
+            }
+
+            // 🥚 彩蛋：点品牌图标5次
+            const brandIcon = document.getElementById('brandIcon');
+            if (brandIcon) {
+                let clickCount = 0;
+                brandIcon.style.cursor = 'pointer';
+                brandIcon.addEventListener('click', () => {
+                    clickCount++;
+                    if (clickCount >= 5) {
+                        clickCount = 0;
+                        showToast('👨‍💻 本站由 kevienve 倾情制作 | 愿每一口食物都安心 🍃', 'info');
+                        // 短暂抖动动画
+                        brandIcon.style.animation = 'none';
+                        brandIcon.offsetHeight;
+                        brandIcon.style.animation = 'shake 0.6s ease';
+                        setTimeout(() => { brandIcon.style.animation = ''; }, 600);
+                    }
+                });
+                // 3秒内没点够就重置
+                setInterval(() => { clickCount = 0; }, 3000);
+            }
+
+            // 随机切换底部名言
+            const quotes = [
+                '「民以食为天，食以安为先」',
+                '「你吃的是什么，你就是什么」',
+                '「最好的医生是健康的食物」',
+                '「让每一餐都明明白白」',
+                '「食物是身体的燃料，选对燃料才能跑得更远」',
+                '「知道比不知道更安全」',
+            ];
+            const quoteEl = document.getElementById('footerQuote');
+            if (quoteEl) {
+                let qi = 0;
+                setInterval(() => {
+                    qi = (qi + 1) % quotes.length;
+                    quoteEl.style.opacity = '0';
+                    setTimeout(() => {
+                        quoteEl.textContent = quotes[qi];
+                        quoteEl.style.opacity = '1';
+                    }, 400);
+                }, 8000);
             }
         });
     </script>

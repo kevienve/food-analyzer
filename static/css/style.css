@@ -1375,9 +1375,107 @@ select {
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+/* ====== Footer ====== */
+.site-footer {
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    padding: 20px 0;
+    margin-top: 60px;
+}
+
+.footer-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--color-text);
+}
+
+.footer-icon { font-size: 1.2rem; }
+
+.footer-credit {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+}
+
+.footer-author {
+    font-weight: 700;
+    color: var(--color-primary);
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.footer-author:hover {
+    color: var(--color-info);
+    text-decoration: underline;
+}
+
+.footer-divider {
+    color: var(--color-border);
+    margin: 0 4px;
+}
+
+.footer-version {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    background: var(--color-bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.footer-tagline {
+    width: 100%;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+    transition: opacity 0.4s ease;
+}
+
+/* Brand version badge */
+.brand-version {
+    font-size: 0.6rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-info));
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    vertical-align: super;
+}
+
+/* Shake animation for easter egg */
+@keyframes shake {
+    0%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(-15deg); }
+    40% { transform: rotate(15deg); }
+    60% { transform: rotate(-10deg); }
+    80% { transform: rotate(5deg); }
+}
+
+@media (max-width: 640px) {
+    .footer-container { flex-direction: column; text-align: center; }
+}
+
 /* ====== Print ====== */
 @media print {
-    .navbar, .nav-mobile, .nav-toggle, .toast,
+    .navbar, .nav-mobile, .nav-toggle, .toast, .site-footer,
     .btn, .analysis-overlay, .modal-overlay { display: none !important; }
     .card { box-shadow: none; border: 1px solid #ddd; }
 }
